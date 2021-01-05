@@ -23,6 +23,9 @@
 
             #include "UnityCG.cginc"
 
+            sampler2D _CameraDepthTexture;
+            float4 _CameraDepthTexture_ST;
+
             struct appdata
             {
                 float4 vertex : POSITION;
@@ -34,8 +37,6 @@
                 float2 uv : TEXCOORD0;
                 float4 vertex : SV_POSITION;
             };
-
-            sampler2D _CameraDepthTexture;
 
             v2f vert(appdata v)
             {
@@ -50,7 +51,7 @@
                 half depth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, i.uv);
                 depth = Linear01Depth(depth);
                 //depth = LinearEyeDepth(depth);
-                return depth;
+                return 1.0-depth;
             }
             ENDCG
         }

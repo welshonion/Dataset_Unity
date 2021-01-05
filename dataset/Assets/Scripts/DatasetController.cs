@@ -1,5 +1,7 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEditor.Recorder;
 using UnityEditor.Recorder.Input;
@@ -11,17 +13,32 @@ public class DatasetController : MonoBehaviour
 	private int operateCameraNumber;
 	private bool shadowOn;
 
-	private const string ZENRIN_URL = "http://www.zenrin.co.jp/";
-	private const string PQ_URL = "http://www.pocket-queries.co.jp/";
-
 
 	private RecorderControllerSettings setting;
-
-
 
 	int previousCameraNumber;
 
 	string playModeString;
+
+	private bool m_isRecording;
+
+	private int frameNumber;
+
+
+	private DateTimeOffset datetime;
+
+	private string datetimeStr;
+	private string datetimeStr_milli;
+
+	private long datetime_unix;
+	private string datetime_unix_str;
+
+
+	private string folderPath;
+
+	private StreamWriter sw;
+
+
 
 
 
@@ -41,6 +58,16 @@ public class DatasetController : MonoBehaviour
 		// `RecorderControllerSettings`はScriptableObject
 		setting = ScriptableObject.CreateInstance<RecorderControllerSettings>();
 
+		frameNumber = 0;
+		m_isRecording = false;
+
+		datetime = System.DateTimeOffset.Now;
+		datetimeStr = datetime.ToString();
+		datetimeStr_milli = datetime.Millisecond.ToString();
+		Debug.Log(datetimeStr);
+
+
+		
 
 	}
 
@@ -48,17 +75,55 @@ public class DatasetController : MonoBehaviour
 	void Update()
 	{
 
+		if (m_isRecording)
+		{
+			datetime = datetime.AddMilliseconds(Time.deltaTime * 1000f);
+
+			datetimeStr = datetime.ToString();
+			datetimeStr_milli = datetime.Millisecond.ToString();
+			//Debug.Log(frameNumber);
+
+			datetime_unix = datetime.ToUnixTimeMilliseconds();
+			datetime_unix_str = datetime_unix.ToString();
+			datetime_unix_str = datetime_unix_str.Substring(0, 10) + "." + datetime_unix_str.Substring(10);
+
+            if (frameNumber < 10000)
+            {
+				sw.WriteLine(datetime_unix_str + " rgb/image_"+String.Format("{0:0000}",frameNumber)+".png");
+			}
+            else
+            {
+				sw.WriteLine(datetime_unix_str + " rgb/image_"+frameNumber+".png");
+			}
+
+			
+			
+
+
+
+			frameNumber++;
+        }
+        else
+        {
+			datetime = System.DateTime.Now;
+
+			datetimeStr = datetime.ToString();
+			datetimeStr_milli = datetime.Millisecond.ToString();
+		}
 	}
 
 
 	void OnGUI()
 	{
+		GUI.Label(new Rect(90, 150, 100, 50), datetimeStr);
+
+		GUI.Label(new Rect(90, 200, 100, 50), datetimeStr_milli);
 
 		if (menuVisible == true)
 		{
-			GUI.BeginGroup(new Rect(50, 50, Screen.width - 100, 270));
+			GUI.BeginGroup(new Rect(50, 50, Screen.width - 100, 320));
 
-			GUI.Box(new Rect(0, 0, Screen.width - 100, 270), "Control Menu");
+			GUI.Box(new Rect(0, 0, Screen.width - 100, 320), "Control Menu");
 
 			if (GUI.Button(new Rect(Screen.width - 100 - 50, 10, 40, 40), "X"))
 			{
@@ -154,98 +219,15 @@ public class DatasetController : MonoBehaviour
 				InitAICars();
 				changePlayMode(2);
 
+				Recording();
 
-				// Recording Mode
-				setting.SetRecordModeToManual();
+			}
 
+			if (GUI.Button(new Rect(400, 250, 120, 40), "Stop Recording"))
+			{
+				menuVisible = false;
 
-				//*****Frame Rate*****//
-				//Playback
-				setting.FrameRatePlayback = FrameRatePlayback.Constant;
-				//Target FPS Value
-				setting.FrameRate = 30f;
-				//Cap FPS
-				setting.CapFrameRate = true;
-
-
-				//*************************//
-				//*Image Recorder Settings*//
-				//*************************//
-				var imageRecorderSettings = ScriptableObject.CreateInstance<ImageRecorderSettings>();
-
-				//*****Capture*****//
-				//imageRecorderSettings.imageInputSettings = new CameraInputSettings()
-				//{
-				//	Source
-				//};
-				//Source
-				//imageRecorderSettings.imageInputSettings.source = ImageSource.MainCamera;
-
-				// この設定では、ゲームビューを解像度640x480で撮影します
-				imageRecorderSettings.imageInputSettings = new GameViewInputSettings()
-				{
-
-					OutputWidth = 640,
-					OutputHeight = 480,
-				};
-				// 動画のファイル名を指定します。撮影された動画は、プロジェクトルート直下に、このファイル名で保存されます
-				imageRecorderSettings.OutputFile = "Recordings/test/image_<Take>_<Frame><Extension>";
-				// 動画のフォーマットを指定します。MP4とWEBMのどちらかを指定します。
-				imageRecorderSettings.OutputFormat = ImageRecorderSettings.ImageRecorderOutputFormat.PNG;
-				// レコーダーを有効にします
-				imageRecorderSettings.Enabled = true;
-				// レコーダーを追加します
-				setting.AddRecorderSettings(imageRecorderSettings);
-
-				var recorderController = new RecorderController(setting);
-
-				recorderController.PrepareRecording();
-				recorderController.StartRecording();
-
-
-
-				/*
-				// MovieRecorderSettingsもScriptableObject
-				var movieRecorderSettings = ScriptableObject.CreateInstance<MovieRecorderSettings>();
-				// 撮影する対象を指定します
-				// この設定では、ゲームビューを解像度640x480で撮影します
-				movieRecorderSettings.ImageInputSettings = new GameViewInputSettings() {
-					outputWidth = 640,
-					outputHeight = 480, 
-				};
-				// 音声も録画対象に含めます
-				movieRecorderSettings.audioInputSettings.preserveAudio = true;
-				// 動画のファイル名を指定します。撮影された動画は、プロジェクトルート直下に、このファイル名で保存されます
-				movieRecorderSettings.outputFile = "dark-movie-recording";
-				// 動画のフォーマットを指定します。MP4とWEBMのどちらかを指定します。
-				movieRecorderSettings.outputFormat = VideoRecorderOutputFormat.MP4;
-				// レコーダーを有効にします
-				movieRecorderSettings.enabled = true;
-				// レコーダーを追加します
-				setting.AddRecorederSettings(movieRecorderSettings);
-				最後にRecorderControllerを初期化します。
-
-				var recorderController = new RecorderController(setting);
-				レコーダーコントローラの起動と停止
-				RecorderControllerを手動で初期化した場合は、録画の開始と停止を行うことで動画を撮影することができます。 具体的には起動にはRecorderController.StartRecording()を、停止にRecorderController.StopRecording()を呼び出します。
-
-				recorderController.StartRecording();
-				// ここから撮影が開始されるのでコンテンツを動かすなどする
-
-				// ここで撮影終了。動画が保存される。
-				recorderController.StopRecording();
-
-				*/
-
-
-				//recorderController.StartRecording();
-				// ここから撮影が開始されるのでコンテンツを動かすなどする
-
-				// ここで撮影終了。動画が保存される。
-				//recorderController.StopRecording();
-
-
-
+				RecordingFinish();
 			}
 
 
@@ -310,7 +292,153 @@ public class DatasetController : MonoBehaviour
 			this.GetComponent<CameraController>().ChangeCamera(operateCameraNumber);
 		}
 
+	}
+
+
+	void Recording()
+    {
+		folderPath = "Recordings/data_" + datetime.ToString("yyyyMMddHHmm") + "_fps" + "30" + "/";
+		Directory.CreateDirectory(folderPath);
+
+		sw = new StreamWriter(folderPath + "rgb.txt", false);
+		sw.WriteLine("# color images");
+		sw.WriteLine("# file: '" + folderPath + "'");
+		sw.WriteLine("# timestamp filename");
+
+
+		// Recording Mode
+		setting.SetRecordModeToManual();
+
+
+		//*****Frame Rate*****//
+		//Playback
+		setting.FrameRatePlayback = FrameRatePlayback.Constant;
+		//Target FPS Value
+		setting.FrameRate = 30f;
+		//Cap FPS
+		setting.CapFrameRate = true;
+
+
+		//*************************//
+		//*Image Recorder Settings*//
+		//*************************//
+		var imageRecorderSettings = ScriptableObject.CreateInstance<ImageRecorderSettings>();
+
+		//*****Capture*****//
+		//imageRecorderSettings.imageInputSettings = new CameraInputSettings()
+		//{
+		//	Source
+		//};
+		//Source
+		//imageRecorderSettings.imageInputSettings.source = ImageSource.MainCamera;
+
+		// この設定では、ゲームビューを解像度640x480で撮影します
+		imageRecorderSettings.imageInputSettings = new CameraInputSettings()
+		{
+			Source = ImageSource.MainCamera,
+			OutputWidth = 640,
+			OutputHeight = 480,
+			// change to another tag if using ImageSource.TaggedCamera
+			//CameraTag = "Depth", 
+			RecordTransparency = false,
+			CaptureUI = false
+
+		};
+
+		// 動画のファイル名を指定します。撮影された動画は、プロジェクトルート直下に、このファイル名で保存されます
+		imageRecorderSettings.OutputFile = folderPath + "rgb/image_<Frame>";
+		// 動画のフォーマットを指定します。MP4とWEBMのどちらかを指定します。
+		imageRecorderSettings.OutputFormat = ImageRecorderSettings.ImageRecorderOutputFormat.PNG;
+		// レコーダーを有効にします
+		imageRecorderSettings.Enabled = true;
+		// レコーダーを追加します
+		setting.AddRecorderSettings(imageRecorderSettings);
+
+		var recorderController = new RecorderController(setting);
+
+		recorderController.PrepareRecording();
+		recorderController.StartRecording();
+
+		m_isRecording = true;
+
+
+		/*
+		imageRecorderSettings.imageInputSettings = new GameViewInputSettings()
+		{
+
+			OutputWidth = 640,
+			OutputHeight = 480,
+		};
+		// 動画のファイル名を指定します。撮影された動画は、プロジェクトルート直下に、このファイル名で保存されます
+		imageRecorderSettings.OutputFile = "Recordings/test/image_<Take>_<Frame><Extension>";
+		// 動画のフォーマットを指定します。MP4とWEBMのどちらかを指定します。
+		imageRecorderSettings.OutputFormat = ImageRecorderSettings.ImageRecorderOutputFormat.PNG;
+		// レコーダーを有効にします
+		imageRecorderSettings.Enabled = true;
+		// レコーダーを追加します
+		setting.AddRecorderSettings(imageRecorderSettings);
+
+		var recorderController = new RecorderController(setting);
+
+		recorderController.PrepareRecording();
+		recorderController.StartRecording();
+		*/
+
+
+		/*
+		// MovieRecorderSettingsもScriptableObject
+		var movieRecorderSettings = ScriptableObject.CreateInstance<MovieRecorderSettings>();
+		// 撮影する対象を指定します
+		// この設定では、ゲームビューを解像度640x480で撮影します
+		movieRecorderSettings.ImageInputSettings = new GameViewInputSettings() {
+			outputWidth = 640,
+			outputHeight = 480, 
+		};
+		// 音声も録画対象に含めます
+		movieRecorderSettings.audioInputSettings.preserveAudio = true;
+		// 動画のファイル名を指定します。撮影された動画は、プロジェクトルート直下に、このファイル名で保存されます
+		movieRecorderSettings.outputFile = "dark-movie-recording";
+		// 動画のフォーマットを指定します。MP4とWEBMのどちらかを指定します。
+		movieRecorderSettings.outputFormat = VideoRecorderOutputFormat.MP4;
+		// レコーダーを有効にします
+		movieRecorderSettings.enabled = true;
+		// レコーダーを追加します
+		setting.AddRecorederSettings(movieRecorderSettings);
+		最後にRecorderControllerを初期化します。
+
+		var recorderController = new RecorderController(setting);
+		レコーダーコントローラの起動と停止
+		RecorderControllerを手動で初期化した場合は、録画の開始と停止を行うことで動画を撮影することができます。 具体的には起動にはRecorderController.StartRecording()を、停止にRecorderController.StopRecording()を呼び出します。
+
+		recorderController.StartRecording();
+		// ここから撮影が開始されるのでコンテンツを動かすなどする
+
+		// ここで撮影終了。動画が保存される。
+		recorderController.StopRecording();
+
+		*/
+
+
+		//recorderController.StartRecording();
+		// ここから撮影が開始されるのでコンテンツを動かすなどする
+
+		// ここで撮影終了。動画が保存される。
+		//recorderController.StopRecording();
 
 
 	}
+
+	void RecordingFinish()
+    {
+
+		sw.Flush();
+		sw.Close();
+
+		UnityEngine.Application.Quit();
+	}
+
+	void ExportYaml()
+    {
+
+    }
 }
