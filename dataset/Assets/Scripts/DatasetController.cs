@@ -36,10 +36,24 @@ public class DatasetController : MonoBehaviour
 
 	private string folderPath;
 
-	private StreamWriter sw;
+	private StreamWriter sw_rgb;
+	private StreamWriter sw_gt;
+	private StreamWriter sw_yaml;
+
+	[SerializeField] private GameObject cameraObject;
+	[SerializeField] private Camera cameraParameter;
+
+	Vector3 pos;
+	Quaternion rot;
 
 
+	[SerializeField] private float framerate = 30f;
+	[SerializeField] private int width = 640;
+	[SerializeField] private int height = 480;
 
+	[SerializeField] private int finishFrameNumber = 4000;
+
+	private RecorderController recorderController;
 
 
 	// Use this for initialization
@@ -77,6 +91,13 @@ public class DatasetController : MonoBehaviour
 
 		if (m_isRecording)
 		{
+			if (frameNumber > finishFrameNumber)
+			{
+				RecordingFinish();
+				m_isRecording = false;
+			}
+
+
 			datetime = datetime.AddMilliseconds(Time.deltaTime * 1000f);
 
 			datetimeStr = datetime.ToString();
@@ -89,16 +110,22 @@ public class DatasetController : MonoBehaviour
 
             if (frameNumber < 10000)
             {
-				sw.WriteLine(datetime_unix_str + " rgb/image_"+String.Format("{0:0000}",frameNumber)+".png");
+				sw_rgb.WriteLine(datetime_unix_str + " rgb/image_"+String.Format("{0:0000}",frameNumber)+".png");
 			}
             else
             {
-				sw.WriteLine(datetime_unix_str + " rgb/image_"+frameNumber+".png");
+				sw_rgb.WriteLine(datetime_unix_str + " rgb/image_"+frameNumber+".png");
 			}
 
-			
-			
+			pos = cameraObject.transform.position;
+			rot = cameraObject.transform.rotation;
 
+			sw_gt.WriteLine(String.Format("{0} {1} {2} {3} {4} {5} {6}", datetime_unix_str, pos.x, pos.y, pos.z, rot.x, rot.y, rot.z, rot.w));
+
+            if (frameNumber % (int)(finishFrameNumber / 10) == 0)
+            {
+				Debug.Log(String.Format("{0}frame", frameNumber));
+            }
 
 
 			frameNumber++;
@@ -160,7 +187,7 @@ public class DatasetController : MonoBehaviour
 					shadowOn = false;
 				}
 			}
-			GUI.Label(new Rect(120, 130, 100, 30), "TIme");
+			GUI.Label(new Rect(120, 130, 100, 30), "Time");
 			hSliderValue = GUI.HorizontalSlider(new Rect(120, 155, 150, 30), hSliderValue, 0.0f, 100.0f);
 			this.GetComponent<AmbientController>().rotateAmbientLight(hSliderValue);
 
@@ -297,13 +324,18 @@ public class DatasetController : MonoBehaviour
 
 	void Recording()
     {
-		folderPath = "Recordings/data_" + datetime.ToString("yyyyMMddHHmm") + "_fps" + "30" + "/";
+		folderPath = "Recordings/data_" + datetime.ToString("yyyyMMddHHmm") + "_fps" + (int)framerate + "/";
 		Directory.CreateDirectory(folderPath);
 
-		sw = new StreamWriter(folderPath + "rgb.txt", false);
-		sw.WriteLine("# color images");
-		sw.WriteLine("# file: '" + folderPath + "'");
-		sw.WriteLine("# timestamp filename");
+		sw_rgb = new StreamWriter(folderPath + "rgb.txt", false);
+		sw_rgb.WriteLine("# color images");
+		sw_rgb.WriteLine("# file: '" + folderPath + "'");
+		sw_rgb.WriteLine("# timestamp filename");
+
+		sw_gt = new StreamWriter(folderPath + "groundtruth.txt", false);
+		sw_gt.WriteLine("# ground truth trajectory");
+		sw_gt.WriteLine("# file: '" + folderPath + "'");
+		sw_gt.WriteLine("# timestamp tx ty tz qx qy qz qw");
 
 
 		// Recording Mode
@@ -314,7 +346,7 @@ public class DatasetController : MonoBehaviour
 		//Playback
 		setting.FrameRatePlayback = FrameRatePlayback.Constant;
 		//Target FPS Value
-		setting.FrameRate = 30f;
+		setting.FrameRate = framerate;
 		//Cap FPS
 		setting.CapFrameRate = true;
 
@@ -336,8 +368,8 @@ public class DatasetController : MonoBehaviour
 		imageRecorderSettings.imageInputSettings = new CameraInputSettings()
 		{
 			Source = ImageSource.MainCamera,
-			OutputWidth = 640,
-			OutputHeight = 480,
+			OutputWidth = width,
+			OutputHeight = height,
 			// change to another tag if using ImageSource.TaggedCamera
 			//CameraTag = "Depth", 
 			RecordTransparency = false,
@@ -354,10 +386,12 @@ public class DatasetController : MonoBehaviour
 		// レコーダーを追加します
 		setting.AddRecorderSettings(imageRecorderSettings);
 
-		var recorderController = new RecorderController(setting);
+		recorderController = new RecorderController(setting);
 
 		recorderController.PrepareRecording();
 		recorderController.StartRecording();
+
+		ExportYaml();
 
 		m_isRecording = true;
 
@@ -431,8 +465,14 @@ public class DatasetController : MonoBehaviour
 	void RecordingFinish()
     {
 
-		sw.Flush();
-		sw.Close();
+		sw_rgb.Flush();
+		sw_rgb.Close();
+		sw_gt.Flush();
+		sw_gt.Close();
+
+		m_isRecording = false;
+
+		recorderController.StopRecording();
 
 		UnityEngine.Application.Quit();
 	}
@@ -440,5 +480,90 @@ public class DatasetController : MonoBehaviour
 	void ExportYaml()
     {
 
-    }
+		Debug.Log(cameraParameter.sensorSize.x);
+		float fx, fy, cx, cy, k1, k2, p1, p2, k3;
+
+		fx = cameraParameter.focalLength * 640.0f / cameraParameter.sensorSize.x;
+		fy = cameraParameter.focalLength * height / cameraParameter.sensorSize.y;
+		cx = width / 2;
+		cy = height / 2;
+		k1 = 0.0f;
+		k2 = 0.0f;
+		p1 = 0.0f;
+		p2 = 0.0f;
+		k3 = 0.0f;
+
+
+		//Debug.Log(String.Format("fx:{0},fy:{1},cx:,cy",fx,fy));
+
+
+		sw_yaml = new StreamWriter(folderPath + "exp.yaml", false);
+		sw_yaml.WriteLine("% YAML:1.0");
+		sw_yaml.WriteLine("");
+		sw_yaml.WriteLine("#--------------------------------------------------------------------------------------------");
+		sw_yaml.WriteLine("# Camera Parameters. Adjust them!");
+		sw_yaml.WriteLine("#--------------------------------------------------------------------------------------------");
+		sw_yaml.WriteLine("");
+		sw_yaml.WriteLine("# Camera calibration and distortion parameters (OpenCV)");
+		sw_yaml.WriteLine(String.Format("Camera.fx: {0:F}",fx));
+		sw_yaml.WriteLine(String.Format("Camera.fy: {0:F}", fy));
+		sw_yaml.WriteLine(String.Format("Camera.cx: {0:F}", cx));
+		sw_yaml.WriteLine(String.Format("Camera.cy: {0:F}", cy));
+		sw_yaml.WriteLine("");
+		sw_yaml.WriteLine(String.Format("Camera.k1: {0:F}", k1));
+		sw_yaml.WriteLine(String.Format("Camera.k2: {0:F}", k2));
+		sw_yaml.WriteLine(String.Format("Camera.p1: {0:F}", p1));
+		sw_yaml.WriteLine(String.Format("Camera.p2: {0:F}", p2));
+		sw_yaml.WriteLine(String.Format("Camera.k3: {0:F}", k3));
+		sw_yaml.WriteLine("");
+		sw_yaml.WriteLine("# Camera frames per second ");
+		sw_yaml.WriteLine(String.Format("Camera.fps: {0:F}", framerate));
+		sw_yaml.WriteLine("");
+		sw_yaml.WriteLine("# Color order of the images (0: BGR, 1: RGB. It is ignored if images are grayscale)");
+		sw_yaml.WriteLine("Camera.RGB: 1");
+		sw_yaml.WriteLine("");
+
+
+
+		sw_yaml.WriteLine("#--------------------------------------------------------------------------------------------");
+		sw_yaml.WriteLine("# ORB Parameters");
+		sw_yaml.WriteLine("#--------------------------------------------------------------------------------------------");
+		sw_yaml.WriteLine("");
+		sw_yaml.WriteLine("# ORB Extractor: Number of features per image");
+		sw_yaml.WriteLine("ORBextractor.nFeatures: 1000");
+		sw_yaml.WriteLine("");
+		sw_yaml.WriteLine("# ORB Extractor: Scale factor between levels in the scale pyramid 	");
+		sw_yaml.WriteLine("ORBextractor.scaleFactor: 1.2");
+		sw_yaml.WriteLine("");
+		sw_yaml.WriteLine("# ORB Extractor: Number of levels in the scale pyramid	");
+		sw_yaml.WriteLine("ORBextractor.nLevels: 8");
+		sw_yaml.WriteLine("");
+		sw_yaml.WriteLine("# ORB Extractor: Fast threshold");
+		sw_yaml.WriteLine("# Image is divided in a grid. At each cell FAST are extracted imposing a minimum response.");
+		sw_yaml.WriteLine("# Firstly we impose iniThFAST. If no corners are detected we impose a lower value minThFAST");
+		sw_yaml.WriteLine("# You can lower these values if your images have low contrast			");
+		sw_yaml.WriteLine("		ORBextractor.iniThFAST: 20");
+		sw_yaml.WriteLine("ORBextractor.minThFAST: 7");
+		sw_yaml.WriteLine("");
+
+
+
+		sw_yaml.WriteLine("#--------------------------------------------------------------------------------------------");
+		sw_yaml.WriteLine("# Viewer Parameters");
+		sw_yaml.WriteLine("#--------------------------------------------------------------------------------------------");
+		sw_yaml.WriteLine("Viewer.KeyFrameSize: 0.05");
+		sw_yaml.WriteLine("Viewer.KeyFrameLineWidth: 1");
+		sw_yaml.WriteLine("Viewer.GraphLineWidth: 0.9");
+		sw_yaml.WriteLine("Viewer.PointSize:2");
+		sw_yaml.WriteLine("Viewer.CameraSize: 0.08");
+		sw_yaml.WriteLine("Viewer.CameraLineWidth: 3"); 
+		sw_yaml.WriteLine("Viewer.ViewpointX: 0");
+		sw_yaml.WriteLine("Viewer.ViewpointY: -0.7");
+		sw_yaml.WriteLine("Viewer.ViewpointZ: -1.8");
+		sw_yaml.WriteLine("Viewer.ViewpointF: 500");
+		sw_yaml.WriteLine("");
+
+		sw_yaml.Flush();
+		sw_yaml.Close();
+	}
 }
