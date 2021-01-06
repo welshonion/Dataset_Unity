@@ -39,6 +39,7 @@ public class DatasetController : MonoBehaviour
 	private StreamWriter sw_rgb;
 	private StreamWriter sw_gt;
 	private StreamWriter sw_yaml;
+	private StreamWriter sw_cond;
 
 	[SerializeField] private GameObject cameraObject;
 	[SerializeField] private Camera cameraParameter;
@@ -54,6 +55,26 @@ public class DatasetController : MonoBehaviour
 	[SerializeField] private int finishFrameNumber = 4000;
 
 	private RecorderController recorderController;
+
+	private enum Sky
+    {
+		Sunny,
+		Cloud,
+		Night
+    }
+
+	
+
+	private enum Effect
+    {
+		None,
+		Wind,
+		Rain
+    }
+
+	private Sky sky;
+	private bool shadow;
+	private Effect effect;
 
 
 	// Use this for initialization
@@ -80,8 +101,9 @@ public class DatasetController : MonoBehaviour
 		datetimeStr_milli = datetime.Millisecond.ToString();
 		Debug.Log(datetimeStr);
 
-
-		
+		sky = Sky.Sunny;
+		shadow = true;
+		effect = Effect.None;
 
 	}
 
@@ -93,7 +115,7 @@ public class DatasetController : MonoBehaviour
 		{
 			if (frameNumber > finishFrameNumber)
 			{
-				RecordingFinish();
+				FinishRecording();
 				m_isRecording = false;
 			}
 
@@ -120,7 +142,7 @@ public class DatasetController : MonoBehaviour
 			pos = cameraObject.transform.position;
 			rot = cameraObject.transform.rotation;
 
-			sw_gt.WriteLine(String.Format("{0} {1} {2} {3} {4} {5} {6}", datetime_unix_str, pos.x, pos.y, pos.z, rot.x, rot.y, rot.z, rot.w));
+			sw_gt.WriteLine(String.Format("{0} {1} {2} {3} {4} {5} {6} {7}", datetime_unix_str, pos.x, pos.y, pos.z, rot.x, rot.y, rot.z, rot.w));
 
             if (frameNumber % (int)(finishFrameNumber / 10) == 0)
             {
@@ -162,14 +184,17 @@ public class DatasetController : MonoBehaviour
 			if (GUI.Button(new Rect(20, 60, 80, 40), "Sunny"))
 			{
 				this.GetComponent<AmbientController>().changeSkybox(AmbientController.AmbientType.AMBIENT_SKYBOX_SUNNY);
+				sky = Sky.Sunny;
 			}
 			if (GUI.Button(new Rect(110, 60, 80, 40), "Cloud"))
 			{
 				this.GetComponent<AmbientController>().changeSkybox(AmbientController.AmbientType.AMBIENT_SKYBOX_CLOUD);
+				sky = Sky.Cloud;
 			}
 			if (GUI.Button(new Rect(200, 60, 80, 40), "Night"))
 			{
 				this.GetComponent<AmbientController>().changeSkybox(AmbientController.AmbientType.AMBIENT_SKYBOX_NIGHT);
+				sky = Sky.Night;
 			}
 
 			// ---------- Shadow Control ----------
@@ -179,11 +204,13 @@ public class DatasetController : MonoBehaviour
 				if (shadowOn == false)
 				{
 					this.GetComponent<AmbientController>().changeShadow(true);
+					shadow = true;
 					shadowOn = true;
 				}
 				else
 				{
 					this.GetComponent<AmbientController>().changeShadow(false);
+					shadow = false;
 					shadowOn = false;
 				}
 			}
@@ -196,14 +223,17 @@ public class DatasetController : MonoBehaviour
 			if (GUI.Button(new Rect(20, 200, 80, 40), "None"))
 			{
 				this.GetComponent<AmbientController>().changeParticle(AmbientController.ParticleType.PARTICLE_NONE);
+				effect = Effect.None;
 			}
 			if (GUI.Button(new Rect(110, 200, 80, 40), "Wind"))
 			{
 				this.GetComponent<AmbientController>().changeParticle(AmbientController.ParticleType.PARTICLE_WIND);
+				effect = Effect.Wind;
 			}
 			if (GUI.Button(new Rect(200, 200, 80, 40), "Rain"))
 			{
 				this.GetComponent<AmbientController>().changeParticle(AmbientController.ParticleType.PARTICLE_RAIN);
+				effect = Effect.Rain;
 			}
 
 			// ---------- Camera Control ----------
@@ -246,7 +276,7 @@ public class DatasetController : MonoBehaviour
 				InitAICars();
 				changePlayMode(2);
 
-				Recording();
+				StartRecording();
 
 			}
 
@@ -254,7 +284,7 @@ public class DatasetController : MonoBehaviour
 			{
 				menuVisible = false;
 
-				RecordingFinish();
+				FinishRecording();
 			}
 
 
@@ -322,11 +352,13 @@ public class DatasetController : MonoBehaviour
 	}
 
 
-	void Recording()
+	void StartRecording()
     {
 		folderPath = "Recordings/data_" + datetime.ToString("yyyyMMddHHmm") + "_fps" + (int)framerate + "/";
 		Directory.CreateDirectory(folderPath);
 
+
+		//*****Write Conditions*****//
 		sw_rgb = new StreamWriter(folderPath + "rgb.txt", false);
 		sw_rgb.WriteLine("# color images");
 		sw_rgb.WriteLine("# file: '" + folderPath + "'");
@@ -338,33 +370,23 @@ public class DatasetController : MonoBehaviour
 		sw_gt.WriteLine("# timestamp tx ty tz qx qy qz qw");
 
 
+		//*****Recorder Setting*****//
+
 		// Recording Mode
 		setting.SetRecordModeToManual();
 
-
-		//*****Frame Rate*****//
-		//Playback
+		// Playback
 		setting.FrameRatePlayback = FrameRatePlayback.Constant;
-		//Target FPS Value
+		// Target FPS Value
 		setting.FrameRate = framerate;
-		//Cap FPS
+		// Cap FPS
 		setting.CapFrameRate = true;
 
 
-		//*************************//
-		//*Image Recorder Settings*//
-		//*************************//
+		// Image Recorder Settings
 		var imageRecorderSettings = ScriptableObject.CreateInstance<ImageRecorderSettings>();
 
-		//*****Capture*****//
-		//imageRecorderSettings.imageInputSettings = new CameraInputSettings()
-		//{
-		//	Source
-		//};
-		//Source
-		//imageRecorderSettings.imageInputSettings.source = ImageSource.MainCamera;
-
-		// この設定では、ゲームビューを解像度640x480で撮影します
+		// Capture
 		imageRecorderSettings.imageInputSettings = new CameraInputSettings()
 		{
 			Source = ImageSource.MainCamera,
@@ -377,9 +399,9 @@ public class DatasetController : MonoBehaviour
 
 		};
 
-		// 動画のファイル名を指定します。撮影された動画は、プロジェクトルート直下に、このファイル名で保存されます
+		// Set File Name
 		imageRecorderSettings.OutputFile = folderPath + "rgb/image_<Frame>";
-		// 動画のフォーマットを指定します。MP4とWEBMのどちらかを指定します。
+		// Set Image Format
 		imageRecorderSettings.OutputFormat = ImageRecorderSettings.ImageRecorderOutputFormat.PNG;
 		// レコーダーを有効にします
 		imageRecorderSettings.Enabled = true;
@@ -391,78 +413,17 @@ public class DatasetController : MonoBehaviour
 		recorderController.PrepareRecording();
 		recorderController.StartRecording();
 
+
+		//*****ExportFiles*****//
 		ExportYaml();
+		ExportConditions();
 
 		m_isRecording = true;
 
 
-		/*
-		imageRecorderSettings.imageInputSettings = new GameViewInputSettings()
-		{
-
-			OutputWidth = 640,
-			OutputHeight = 480,
-		};
-		// 動画のファイル名を指定します。撮影された動画は、プロジェクトルート直下に、このファイル名で保存されます
-		imageRecorderSettings.OutputFile = "Recordings/test/image_<Take>_<Frame><Extension>";
-		// 動画のフォーマットを指定します。MP4とWEBMのどちらかを指定します。
-		imageRecorderSettings.OutputFormat = ImageRecorderSettings.ImageRecorderOutputFormat.PNG;
-		// レコーダーを有効にします
-		imageRecorderSettings.Enabled = true;
-		// レコーダーを追加します
-		setting.AddRecorderSettings(imageRecorderSettings);
-
-		var recorderController = new RecorderController(setting);
-
-		recorderController.PrepareRecording();
-		recorderController.StartRecording();
-		*/
-
-
-		/*
-		// MovieRecorderSettingsもScriptableObject
-		var movieRecorderSettings = ScriptableObject.CreateInstance<MovieRecorderSettings>();
-		// 撮影する対象を指定します
-		// この設定では、ゲームビューを解像度640x480で撮影します
-		movieRecorderSettings.ImageInputSettings = new GameViewInputSettings() {
-			outputWidth = 640,
-			outputHeight = 480, 
-		};
-		// 音声も録画対象に含めます
-		movieRecorderSettings.audioInputSettings.preserveAudio = true;
-		// 動画のファイル名を指定します。撮影された動画は、プロジェクトルート直下に、このファイル名で保存されます
-		movieRecorderSettings.outputFile = "dark-movie-recording";
-		// 動画のフォーマットを指定します。MP4とWEBMのどちらかを指定します。
-		movieRecorderSettings.outputFormat = VideoRecorderOutputFormat.MP4;
-		// レコーダーを有効にします
-		movieRecorderSettings.enabled = true;
-		// レコーダーを追加します
-		setting.AddRecorederSettings(movieRecorderSettings);
-		最後にRecorderControllerを初期化します。
-
-		var recorderController = new RecorderController(setting);
-		レコーダーコントローラの起動と停止
-		RecorderControllerを手動で初期化した場合は、録画の開始と停止を行うことで動画を撮影することができます。 具体的には起動にはRecorderController.StartRecording()を、停止にRecorderController.StopRecording()を呼び出します。
-
-		recorderController.StartRecording();
-		// ここから撮影が開始されるのでコンテンツを動かすなどする
-
-		// ここで撮影終了。動画が保存される。
-		recorderController.StopRecording();
-
-		*/
-
-
-		//recorderController.StartRecording();
-		// ここから撮影が開始されるのでコンテンツを動かすなどする
-
-		// ここで撮影終了。動画が保存される。
-		//recorderController.StopRecording();
-
-
 	}
 
-	void RecordingFinish()
+	void FinishRecording()
     {
 
 		sw_rgb.Flush();
@@ -498,7 +459,7 @@ public class DatasetController : MonoBehaviour
 
 
 		sw_yaml = new StreamWriter(folderPath + "exp.yaml", false);
-		sw_yaml.WriteLine("% YAML:1.0");
+		sw_yaml.WriteLine("%YAML:1.0");
 		sw_yaml.WriteLine("");
 		sw_yaml.WriteLine("#--------------------------------------------------------------------------------------------");
 		sw_yaml.WriteLine("# Camera Parameters. Adjust them!");
@@ -542,7 +503,7 @@ public class DatasetController : MonoBehaviour
 		sw_yaml.WriteLine("# Image is divided in a grid. At each cell FAST are extracted imposing a minimum response.");
 		sw_yaml.WriteLine("# Firstly we impose iniThFAST. If no corners are detected we impose a lower value minThFAST");
 		sw_yaml.WriteLine("# You can lower these values if your images have low contrast			");
-		sw_yaml.WriteLine("		ORBextractor.iniThFAST: 20");
+		sw_yaml.WriteLine("ORBextractor.iniThFAST: 20");
 		sw_yaml.WriteLine("ORBextractor.minThFAST: 7");
 		sw_yaml.WriteLine("");
 
@@ -554,7 +515,7 @@ public class DatasetController : MonoBehaviour
 		sw_yaml.WriteLine("Viewer.KeyFrameSize: 0.05");
 		sw_yaml.WriteLine("Viewer.KeyFrameLineWidth: 1");
 		sw_yaml.WriteLine("Viewer.GraphLineWidth: 0.9");
-		sw_yaml.WriteLine("Viewer.PointSize:2");
+		sw_yaml.WriteLine("Viewer.PointSize: 2");
 		sw_yaml.WriteLine("Viewer.CameraSize: 0.08");
 		sw_yaml.WriteLine("Viewer.CameraLineWidth: 3"); 
 		sw_yaml.WriteLine("Viewer.ViewpointX: 0");
@@ -565,5 +526,26 @@ public class DatasetController : MonoBehaviour
 
 		sw_yaml.Flush();
 		sw_yaml.Close();
+	}
+
+
+	void ExportConditions()
+    {
+		sw_cond = new StreamWriter(folderPath + "conditions.txt", false);
+		sw_cond.WriteLine(String.Format("Date: {0}", datetimeStr));
+		sw_cond.WriteLine("");
+		sw_cond.WriteLine(String.Format("framerate: {0:F}", framerate));
+		sw_cond.WriteLine(String.Format("width: {0}", width));
+		sw_cond.WriteLine(String.Format("height: {0}", height));
+		sw_cond.WriteLine(String.Format("finish frame number: {0}", finishFrameNumber));
+		sw_cond.WriteLine(String.Format("Sky: {0}", sky.ToString()));
+		sw_cond.WriteLine(String.Format("Shadow: {0}", shadow));
+		sw_cond.WriteLine(String.Format("Effect: {0}", effect.ToString()));
+		sw_cond.WriteLine("");
+		sw_cond.WriteLine(String.Format("FocalLength: {0}", cameraParameter.focalLength));
+		sw_cond.WriteLine(String.Format("SensorSize: {0},{1}", cameraParameter.sensorSize.x, cameraParameter.sensorSize.y));
+		sw_cond.WriteLine(String.Format("LensShift: {0},{1}", cameraParameter.lensShift.x, cameraParameter.lensShift.y));
+		sw_cond.Flush();
+		sw_cond.Close();
 	}
 }
