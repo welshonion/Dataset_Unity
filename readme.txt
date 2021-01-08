@@ -3,10 +3,10 @@
 
 １．unity Asset StoreからJapanese Otaku Cityをインポート
 ２．プロジェクトのScenes/DatasetSceneを開く
-３．ヒエラルキーからDatasetController、Main Camera_akihabaraを選択するとインスペクターに各情報が表示されるので変更
+３．ヒエラルキーからDatasetController、Main Camera_akihabaraをそれぞれ選択するとインスペクターに各情報が表示されるので変更
 ４．実行→メニュー→Start Recording
-５．プロジェクトのディレクトリ内のRecording内にTUM形式でエクスポートされます
-６．実行に必要なyamlファイルも出力されているのでそれを用いて実行してください
+５．プロジェクトのディレクトリ内のRecordingにTUM形式でエクスポートされます
+６．ORB-SLAMの実行に必要なyamlファイルも出力されているので必要であればそれを用いて実行してください
 
 
 
